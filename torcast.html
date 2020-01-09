@@ -3,7 +3,7 @@
         <title>TorCast</title>
         <script>
 "use strict";
-
+/* Weird Indentation here is for easy copy/pasta into the AWS Lambda Editor, it's not just me. */
 /* MOCKED FUNCTIONS */
 function sendResponse(custPhone, botPhone, response) {
     return response;
@@ -15,11 +15,11 @@ function exportsHandler(message) {
     });
 }
 
-const getTodaysForecast = (coords) => {
+function getForecast(coords) {
     return new Promise((resolve, reject) => {
         resolve(sampleForecast);
     });
-};
+}
 /* END MOCKED FUNCTIONS */
 const options = {
     meadows: '45.32931054214441,-121.66508674621582',
@@ -27,25 +27,60 @@ const options = {
     bachelor: '43.991392, -121.678765',
     baker: '48.858770, -121.672139',
     'mission ridge': '47.284297, -120.409521',
+    help: '',
+};
+
+const forecastTypes = {
+    today: function() {
+
+    },
+    tomorrow: function() {
+
+    },
+    weekend: function() {
+
+    },
 };
 
 /* HANDLERS */
-function handleOptionSelection(response, options) {
+function handleOptionSelection(message, options) {
     return new Promise((resolve, reject) => {
         // If an option was selected, get the response for it.
-        if(optionWasSelected(response, options)) {
-            getTodaysForecast(options[response]).then((response) => {
-                resolve(getForecastResponse(response));
-            });
+        if(optionWasSelected(message, options)) {
+            // Help was Selected
+            if(helpWasSelected(message)) {
+                resolve(getHelpResponse());
+            } else {
+                const coords = options[message];
+
+                getForecast(coords).then((response) => {
+                    // Tomorrow was selected
+                    if(tomorrowWasSelected(message)) {
+                        const tomorrowForecast = getDayForecast(response.daily.data[1]);
+
+                        resolve(tomorrowForecast);
+                    // Weekend was selected
+                    } else if(weekendWasSelected(message)) {
+
+                    // Defualt to Today
+                    } else {
+                        const currentConditions = getCurrentConditions(response);
+                        const dayForecast = getDayForecast(response.daily.data[0]);
+
+                        resolve(currentConditions + dayForecast);
+                    }
+                });
+            }
+
         // Otherwise, return the menu
         } else {
-            resolve(getMenuResponse());
+            resolve(getMenuResponse(options));
         }
     });
 }
 
 /* GETTERS */
-function getMenuResponse() {
+function getMenuResponse(options) {
     let response = "Welcome to TorCast™\n"
     response += "Options:\n";
     
@@ -59,24 +94,41 @@ function getMenuResponse() {
     return response;
 }
 
-function getForecastResponse(forecastResponse) {
-    const todaysForecast = convertDailyInfoFromForecast(forecastResponse.daily.data[0]);
-    const currentConditions = convertCurrentConditionsFromForecast(forecastResponse);
+function getHelpResponse() {
+    let helpMenu = '';
 
-    const response =
-`
-${currentConditions.summary} | ${currentConditions.temperature}°F | ${currentConditions.windSpeed}MPH
-== ${convertDateToString(todaysForecast.date)} ==
-${todaysForecast.daySummary}
-Temp: ${todaysForecast.low}-${todaysForecast.high}°F
-Wind: ${todaysForecast.windSpeed}MPH Gusts: ${todaysForecast.windGust}MPH
-Precip: ${todaysForecast.precipAccumulation}"/${todaysForecast.precipType}`;
+    helpMenu += `** Help **\n`;
+    helpMenu += `Reply w/ a resort in options to get the forecast\n`;
+    helpMenu += `Ex: 'baker'\n`;
+    helpMenu += `Reply w/ anything else to get the menu\n`;
+    helpMenu += `* Modifiers *\n`;
+    helpMenu += `- tomorrow\n`;
+    helpMenu += `Ex: 'baker tomorrow'\n`;
 
-    return response;
+    return helpMenu;
+}
+
+function getDayForecast(dailyForecast) {
+    const dayForecast = convertDailyInfoFromForecast(dailyForecast);
+    let forecast = '';
+
+    forecast += `== ${convertDateToString(dayForecast.date)} ==\n`;
+    forecast += `${dayForecast.daySummary}\n`;
+    forecast += `Temp: ${dayForecast.low}-${dayForecast.high}°F\n`;
+    forecast += `Wind: ${dayForecast.windSpeed}MPH Gusts: ${dayForecast.windGust}MPH\n`;
+    forecast += `Precip: ${dayForecast.precipAccumulation}"/${dayForecast.precipType}\n`;
+
+    return forecast;
+}
+
+function getCurrentConditions(forecast) {
+    const currentConditions = convertCurrentConditionsFromForecast(forecast);
+
+    return `${currentConditions.summary} | ${currentConditions.temperature}°F | ${currentConditions.windSpeed}MPH\n`
 }
 
 /* CONVERTERS */
-const convertCurrentConditionsFromForecast = forecast => {
+function convertCurrentConditionsFromForecast(forecast) {
     const currently = forecast.currently;
 
     const currentConditions = {
@@ -87,9 +139,9 @@ const convertCurrentConditionsFromForecast = forecast => {
     };
 
     return currentConditions;
-};
+}
 
-const convertDailyInfoFromForecast = dailyForecast => {
+function convertDailyInfoFromForecast(dailyForecast) {
     const dailyInfo = {
         date: convertEpochToLocalDateTime(dailyForecast.time),
         daySummary: dailyForecast.summary,
@@ -103,21 +155,45 @@ const convertDailyInfoFromForecast = dailyForecast => {
     };
 
     return dailyInfo;
-};
+}
 
 function convertDateToString(date) {
   return date.toDateString();
 }
 
-const convertEpochToLocalDateTime = epoch => {
+function convertEpochToLocalDateTime(epoch) {
   return new Date(epoch * 1000);
 }
 
-/* CONDITIONS */
+/* HELPERS */
 function optionWasSelected(message, options) {
     const trimmedMessage = message.trim();
 
-    return typeof options[trimmedMessage] !== 'undefined';
+    let selected = false;
+
+    optionsKeys(options).forEach((option) => {
+        if (trimmedMessage.includes(option)) {
+            selected = true;
+        }
+    });
+
+    return selected;
+}
+
+function helpWasSelected(message) {
+    return message.includes('help');
+}
+
+function tomorrowWasSelected(message) {
+    return message.includes('tomorrow');
+}
+
+function weekendWasSelected(message) {
+
+}
+
+function optionsKeys(options) {
+    return Object.keys(options);
 }
     </script>
         <script src="https://cdn.jsdelivr.net/npm/vue"></script>
