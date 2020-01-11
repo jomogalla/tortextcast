@@ -147,14 +147,12 @@ function convertDailyInfoFromForecast(dailyForecast) {
 }
 
 function getCoordsFromMessage(message, options) {
-    const splitMessage = message.split(' ');
-
     let coords = '';
-    splitMessage.forEach((messageWord) => {
-        if(typeof options[messageWord] !== 'undefined') {
-            coords = options[messageWord]
+    optionsKeys(options).forEach((option) => {
+        if(message.includes(option)) {
+            coords = options[option];
         }
-    })
+    });
 
     return coords;
 }
