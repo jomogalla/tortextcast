@@ -116,6 +116,17 @@ function getCurrentConditions(forecast) {
     return `${currentConditions.summary} | ${currentConditions.temperature}°F | ${currentConditions.windSpeed}MPH\n`
 }
 
+function getCoordsFromMessage(message, options) {
+    let coords = '';
+    optionsKeys(options).forEach((option) => {
+        if(message.includes(option)) {
+            coords = options[option];
+        }
+    });
+
+    return coords;
+}
+
 /* CONVERTERS */
 function convertCurrentConditionsFromForecast(forecast) {
     const currently = forecast.currently;
@@ -144,17 +155,6 @@ function convertDailyInfoFromForecast(dailyForecast) {
     };
 
     return dailyInfo;
-}
-
-function getCoordsFromMessage(message, options) {
-    let coords = '';
-    optionsKeys(options).forEach((option) => {
-        if(message.includes(option)) {
-            coords = options[option];
-        }
-    });
-
-    return coords;
 }
 
 function convertDateToString(date) {
