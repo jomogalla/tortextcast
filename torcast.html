@@ -83,15 +83,16 @@ function getMenuResponse(options) {
 }
 
 function getHelpResponse() {
+    // this is a reserved word in Pinpoint, and is managed there :(
     let helpMenu = '';
-
-    helpMenu += `** Help **\n`;
-    helpMenu += `Reply w/ a resort in options to get the forecast\n`;
-    helpMenu += `Ex: 'baker'\n`;
-    helpMenu += `Reply w/ anything else to get the menu\n`;
-    helpMenu += `* Modifiers *\n`;
-    helpMenu += `- tomorrow\n`;
-    helpMenu += `Ex: 'baker tomorrow'\n`;
+    
+    // helpMenu += `** Help **\n`;
+    // helpMenu += `Reply w/ a resort in options to get the forecast\n`;
+    // helpMenu += `Ex: 'baker'\n`;
+    // helpMenu += `Reply w/ anything else to get the menu\n`;
+    // helpMenu += `* Modifiers *\n`;
+    // helpMenu += `- tomorrow\n`;
+    // helpMenu += `Ex: 'baker tomorrow'\n`;
 
     return helpMenu;
 }
