@@ -30,18 +30,6 @@ const options = {
     help: '',
 };
 
-const forecastTypes = {
-    today: function() {
-
-    },
-    tomorrow: function() {
-
-    },
-    weekend: function() {
-
-    },
-};
-
 /* HANDLERS */
 function handleOptionSelection(message, options) {
     return new Promise((resolve, reject) => {
@@ -51,7 +39,7 @@ function handleOptionSelection(message, options) {
             if(helpWasSelected(message)) {
                 resolve(getHelpResponse());
             } else {
-                const coords = options[message];
+                const coords = getCoordsFromMessage(message, options);
 
                 getForecast(coords).then((response) => {
                     // Tomorrow was selected
@@ -155,6 +143,19 @@ function convertDailyInfoFromForecast(dailyForecast) {
     };
 
     return dailyInfo;
+}
+
+function getCoordsFromMessage(message, options) {
+    const splitMessage = message.split(' ');
+
+    let coords = '';
+    splitMessage.forEach((messageWord) => {
+        if(typeof options[messageWord] !== 'undefined') {
+            coords = options[messageWord]
+        }
+    })
+
+    return coords;
 }
 
 function convertDateToString(date) {
