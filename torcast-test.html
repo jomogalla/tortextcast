@@ -1,531 +1,736 @@
 <html>
-    <head>
-        <title>TorCast</title>
-        <script>
-"use strict";
-/* Weird Indentation here is for easy copy/pasta into the AWS Lambda Editor, it's not just me. */
-/* MOCKED FUNCTIONS */
-class BotOptionModifier {
-  constructor(optionModifier) {
-    this.name = optionModifier.name;
-    this.handler = optionModifier.handler;
-  }
-}
 
-
-class BotOption  {
-  constructor(option) {
-    this.name = option.name;
-    this.aliases = option.aliases;
-    this.visible = option.visible;
-    this.enabled = option.enabled;
-    this.handler = option.handler;
-    
-    this.modifiers = [];
-    
-    option.modifiers.forEach((optionModifier) => {
-      let modifier = new BotOptionModifier(optionModifier);
-      this.modifiers.push(modifier);
-    });
-  }
-
-  isSelected(message) {
-        return message.includes(this.name);
-    }
-}
-
-
-class ReplyBot {
-  constructor(replyBotConfig) {
-    this.sharedMethods = replyBotConfig.sharedMethods;
-    
-    this.options = [];
-
-    replyBotConfig.options.forEach((botOption) => {
-      let option = new BotOption(botOption);
-      this.options.push(option);
-    });
-  }
-  
-  getResponse(message) {
-    var responseMessage = '';
-
-    this.options.forEach((option) => {
-        if(option.isSelected(message)) {
-            responseMessage = option.handler();
+<head>
+    <title>TorCast</title>
+    <script>
+        "use strict";
+        /* Weird Indentation here is for easy copy/pasta into the AWS Lambda Editor, it's not just me. */
+        /* MOCKED FUNCTIONS */
+        function sendResponse(custPhone, botPhone, response) {
+            return response;
         }
-    });
-    return responseMessage;
-  }
-}
 
-var replyBotConfig = {
-  options: [
-    {
-      name: 'meadows',
-      aliases: ['mt hood meadows'],
-      visible: true,
-      enabled: true,
-      handler: (message) => {
-        return 'yolo';
-      },
-      modifiers: [
-        {
-          name: 'tomorrow', 
-          handler: () => {}
-        },
-        {
-          name: 'lifts', 
-          handler: () => {}
-        },
-        {
-          name: 'parking', 
-          handler: () => {}
-        },
-      ],
-    },
-  ],
-  sharedMethods: {
-    
-  }
-};
+        function exportsHandler(message) {
+            return new Promise((resolve, reject) => {
+                handleOptionSelection(message, options).then(response => resolve(response));
+            });
+        }
+
+        function getForecast(coords) {
+            return new Promise((resolve, reject) => {
+                resolve(sampleForecast);
+            });
+        }
+        /* END MOCKED FUNCTIONS */
+        class BotOptionModifier {
+            constructor(optionModifier, parent) {
+                this.name = optionModifier.name;
+                this.meta = parent.meta;
+                this.handler = function (message) {
+                    return optionModifier.handler.apply(this, arguments);
+                };
+                this.sharedHandlers = parent.sharedHandlers;
+            }
+
+            isSelected(message) {
+                return message.includes(this.name);
+            }
+        }
 
 
+        class BotOption {
+            constructor(option, parent) {
+                this.name = option.name || '';
+                this.aliases = option.aliases || [];
+                this.visible = option.visible || false;
+                this.enabled = option.enabled || false;
+                this.meta = option.meta || {};
+                this.handler = (message) => {
+                    // Run modifier handler if it was selected
+                    for (const optionModifier of this.modifiers) {
+                        if (optionModifier.isSelected(message)) {
+                            return optionModifier.handler(message);
+                        }
+                    }
+
+                    // Otherwise, run handler
+                    return option.handler.apply(this, arguments);
+                };
+
+                // THESE ARE WEIRD
+                this.sharedHandlers = parent.sharedHandlers || {};
+                this.options = parent.options;
+
+                this.modifiers = [];
+
+                if(typeof option.modifiers !== 'undefined') {
+                    option.modifiers.forEach((optionModifier) => {
+                        let modifier = new BotOptionModifier(optionModifier, this);
+                        this.modifiers.push(modifier);
+                    });
+                }
+            }
+
+            isSelected(message) {
+                if (!this.enabled) { return false; }
+
+                if (message.includes(this.name)) { return true; }
+
+                for (var alias of this.aliases) {
+                    if (message.includes(alias)) { return true; }
+                }
+
+                return false;
+            }
+        }
+
+
+        class ReplyBot {
+            constructor(replyBotConfig) {
+                this.sharedHandlers = replyBotConfig.sharedHandlers;
+
+                this.options = [];
+
+                replyBotConfig.options.forEach((botOption) => {
+                    let option = new BotOption(botOption, this);
+                    this.options.push(option);
+                });
+
+                this.defaultOption = new BotOption(replyBotConfig.defaultOption, this);
+            }
+
+            getResponse(message) {
+                var responseMessage = this.defaultOption.handler();
+
+                this.options.forEach((option) => {
+                    if (option.isSelected(message)) {
+                        responseMessage = option.handler(message);
+                    }
+                });
+
+                return responseMessage;
+            }
+
+            getOptions(message) {
+                let options = this.options.map((option) => {
+                    if (option.visible) {
+                        return option.name;
+                    }
+                });
+
+                options = options.filter(item => typeof item === 'string');
+                return options;
+            }
+        }
+
+        var replyBotConfig = {
+            defaultOption: {
+                handler() {
+                    return new Promise((resolve, reject) => {
+                        let response = "Welcome to TorCast™\n"
+                        response += "Options:\n";
+                        
+                        let counter = 1;
+                        for(const option of this.options) {
+                            //response += `${counter}: ${key}\n`;
+                            response += `- ${option.name}\n`;
+                            counter++;
+                        }
+
+                        resolve(response);
+                    });
+                },
+            },
+            options: [
+                {
+                    name: 'meadows',
+                    aliases: ['mt hood meadows'],
+                    visible: true,
+                    enabled: true,
+                    meta: {
+                        coords: '45.32931054214441,-121.66508674621582',
+                    },
+                    handler() {
+                        return this.sharedHandlers.getTodaysForecast(this.meta.coords);
+                    },
+                    modifiers: [{
+                        name: 'tomorrow',
+                        handler() {
+                            return this.sharedHandlers.getTomorrowsForecast(this.meta.coords);
+                        }
+                    }, {
+                        name: 'lifts',
+                        handler() { }
+                    }, {
+                        name: 'parking',
+                        handler() { }
+                    },
+                    ],
+                }, {
+                    name: 'bachelor',
+                    aliases: ['mt bachelor'],
+                    visible: false,
+                    enabled: true,
+                    handler()  {
+                        return this.sharedHandlers.getTodaysForecast(this.meta.coords);
+                    },
+                    modifiers: [{
+                        name: 'tomorrow',
+                        handler() {
+                            return this.sharedHandlers.getTomorrowsForecast(this.meta.coords);
+                        }
+                    },
+                    ],
+                },
+                {
+                    name: 'help',
+                    enabled: false,
+                    visible: true,
+                }
+            ],
+            sharedHandlers: {
+                getTodaysForecast(coords) {
+                    return new Promise((resolve, reject) => {
+                        getForecast(coords).then((response) => {
+                            const currentConditions = helpers.getCurrentConditions(response);
+                            const dayForecast = helpers.getDayForecast(response.daily.data[0]);
+
+                            resolve(currentConditions + dayForecast);
+                        });
+                    });
+                },
+                getTomorrowsForecast(coords) {
+                    return new Promise((resolve, reject) => {
+                        getForecast(coords).then((response) => {
+                            const tomorrowForecast = helpers.getDayForecast(response.daily.data[1]);
+
+                            resolve(tomorrowForecast);
+                        });
+                    });
+                },
+            }
+        };
+
+        const helpers = {
+            getDayForecast(dailyForecast) {
+                const dayForecast = helpers.convertDailyInfoFromForecast(dailyForecast);
+                let forecast = '';
+
+                forecast += `== ${helpers.convertDateToString(dayForecast.date)} ==\n`;
+                forecast += `${dayForecast.daySummary}\n`;
+                forecast += `Temp: ${dayForecast.low}-${dayForecast.high}°F\n`;
+                forecast += `Wind: ${dayForecast.windSpeed}MPH Gusts: ${dayForecast.windGust}MPH\n`;
+                forecast += `Precip: ${dayForecast.precipAccumulation}"/${dayForecast.precipType}\n`;
+
+                return forecast;
+            },
+            getCurrentConditions(forecast) {
+                const currentConditions = helpers.convertCurrentConditionsFromForecast(forecast);
+
+                return `${currentConditions.summary} | ${currentConditions.temperature}°F | ${currentConditions.windSpeed}MPH\n`;
+            },
+            convertCurrentConditionsFromForecast(forecast) {
+                const currently = forecast.currently;
+
+                const currentConditions = {
+                    summary: currently.summary,
+                    temperature: currently.temperature.toFixed(0),
+                    apparentTemperature: currently.apparentTemperature.toFixed(0),
+                    windSpeed: currently.windSpeed.toFixed(0),
+                };
+
+                return currentConditions;
+            },
+            convertDailyInfoFromForecast(dailyForecast) {
+                const dailyInfo = {
+                    date: helpers.convertEpochToLocalDateTime(dailyForecast.time),
+                    daySummary: dailyForecast.summary,
+                    high: dailyForecast.temperatureMax.toFixed(0),
+                    low: dailyForecast.temperatureMin.toFixed(0),
+                    uvHigh: dailyForecast.uvIndex,
+                    windSpeed: dailyForecast.windSpeed.toFixed(0),
+                    windGust: dailyForecast.windGust.toFixed(0),
+                    precipType: dailyForecast.precipType,
+                    precipAccumulation: dailyForecast.precipAccumulation,
+                };
+
+                return dailyInfo;
+            },
+            convertEpochToLocalDateTime(epoch) {
+                return new Date(epoch * 1000);
+            },
+            convertDateToString(date) {
+                return date.toDateString();
+            },
+        };
 
     </script>
-        <script src="https://cdn.jsdelivr.net/npm/vue"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue"></script>
+    <style>
+        .message,
+        .response {
+            margin: 0.3rem;
+        }
 
-    </head>
-    <body>
-        <div id="app">
-            <form v-on:submit.prevent="handleSubmit">
-                <input v-model="message" type="text" placeholder="enter message here">
-                <button type="submit">send</button>
-            </form>
-            <hr/>
-            <pre>{{ response }}</pre>
+        .message {
+            color: rgb(27, 122, 208);
+        }
+
+        .message-separator {
+            border-color: aquamarine;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <form v-on:submit.prevent="handleSubmit">
+            <input v-model="message" type="text" placeholder="enter message here">
+            <button type="submit">send</button>
+        </form>
+        <div v-for="message in reversedMessages">
+            <hr>
+            <pre class="message">{{message.message || ' '}}</pre>
+            <pre class="response">{{message.response}}</pre>
         </div>
-        <script>
-            var app = new Vue({
+    </div>
+    <script>
+        var app = new Vue({
             el: '#app',
             data() {
                 return {
-                message: '',
-                response: '',
-                replyBot: new ReplyBot(replyBotConfig),
+                    message: '',
+                    messages: [],
+                    response: '',
+                    replyBot: new ReplyBot(replyBotConfig),
                 };
+            },
+            computed: {
+                reversedMessages() {
+                    return this.messages.reverse();
+                },
             },
             methods: {
                 handleSubmit() {
-                    var response = this.replyBot.getResponse(this.message);
-                    this.response = response;
-                    this.message = '';
+                    this.replyBot.getResponse(this.message).then((response) => {
+                        this.response = response;
+                        this.addMessage(this.message, this.response);
+
+                        this.message = '';
+                    });
+                },
+                addMessage(message, response) {
+                    this.messages.push({
+                        message,
+                        response,
+                    });
                 }
             }
-            });
-        </script>
-        <script>
-            const sampleForecast = {
-                "latitude": 45.32931054214441,
-                "longitude": -121.66508674621582,
-                "timezone": "America/Los_Angeles",
-                "currently": {
-                    "time": 1578513856,
-                    "summary": "Possible Flurries",
-                    "icon": "snow",
-                    "nearestStormDistance": 0,
-                    "precipIntensity": 0.002,
-                    "precipIntensityError": 0,
-                    "precipProbability": 0.32,
-                    "precipType": "snow",
-                    "precipAccumulation": 0.0255,
-                    "temperature": 25.43,
-                    "apparentTemperature": 13.84,
-                    "dewPoint": 24.84,
-                    "humidity": 0.98,
-                    "pressure": 1012.4,
-                    "windSpeed": 13.45,
-                    "windGust": 31.97,
-                    "windBearing": 268,
-                    "cloudCover": 0.83,
-                    "uvIndex": 1,
-                    "visibility": 3.94,
-                    "ozone": 387.5
-                },
-                "daily": {
-                    "summary": "Snow today through Tuesday.",
-                    "icon": "snow",
-                    "data": [
-                        {
-                            "time": 1578470400,
-                            "summary": "Possible light snow until evening.",
-                            "icon": "snow",
-                            "sunriseTime": 1578498360,
-                            "sunsetTime": 1578530520,
-                            "moonPhase": 0.44,
-                            "precipIntensity": 0.0225,
-                            "precipIntensityMax": 0.0418,
-                            "precipIntensityMaxTime": 1578525720,
-                            "precipProbability": 0.77,
-                            "precipType": "snow",
-                            "precipAccumulation": 6.66,
-                            "temperatureHigh": 26.3,
-                            "temperatureHighTime": 1578499260,
-                            "temperatureLow": 22.66,
-                            "temperatureLowTime": 1578570600,
-                            "apparentTemperatureHigh": 15.65,
-                            "apparentTemperatureHighTime": 1578538800,
-                            "apparentTemperatureLow": 15.65,
-                            "apparentTemperatureLowTime": 1578538800,
-                            "dewPoint": 23.83,
-                            "humidity": 0.93,
-                            "pressure": 1012.6,
-                            "windSpeed": 10.57,
-                            "windGust": 34.07,
-                            "windGustTime": 1578488940,
-                            "windBearing": 267,
-                            "cloudCover": 0.79,
-                            "uvIndex": 1,
-                            "uvIndexTime": 1578514440,
-                            "visibility": 2.847,
-                            "ozone": 389.3,
-                            "temperatureMin": 22.94,
-                            "temperatureMinTime": 1578556680,
-                            "temperatureMax": 30.02,
-                            "temperatureMaxTime": 1578470700,
-                            "apparentTemperatureMin": 13.01,
-                            "apparentTemperatureMinTime": 1578495720,
-                            "apparentTemperatureMax": 19.8,
-                            "apparentTemperatureMaxTime": 1578470640
-                        },
-                        {
-                            "time": 1578556800,
-                            "summary": "Mostly cloudy throughout the day.",
-                            "icon": "partly-cloudy-day",
-                            "sunriseTime": 1578584760,
-                            "sunsetTime": 1578616980,
-                            "moonPhase": 0.48,
-                            "precipIntensity": 0.0051,
-                            "precipIntensityMax": 0.0187,
-                            "precipIntensityMaxTime": 1578592800,
-                            "precipProbability": 0.34,
-                            "precipType": "snow",
-                            "precipAccumulation": 1.59,
-                            "temperatureHigh": 26.42,
-                            "temperatureHighTime": 1578592380,
-                            "temperatureLow": 23.45,
-                            "temperatureLowTime": 1578640560,
-                            "apparentTemperatureHigh": 16.32,
-                            "apparentTemperatureHighTime": 1578584820,
-                            "apparentTemperatureLow": 15.58,
-                            "apparentTemperatureLowTime": 1578625200,
-                            "dewPoint": 18.85,
-                            "humidity": 0.81,
-                            "pressure": 1021.3,
-                            "windSpeed": 8.25,
-                            "windGust": 25.59,
-                            "windGustTime": 1578602640,
-                            "windBearing": 272,
-                            "cloudCover": 0.82,
-                            "uvIndex": 1,
-                            "uvIndexTime": 1578600720,
-                            "visibility": 4.127,
-                            "ozone": 377,
-                            "temperatureMin": 22.6,
-                            "temperatureMinTime": 1578608100,
-                            "temperatureMax": 26.42,
-                            "temperatureMaxTime": 1578592380,
-                            "apparentTemperatureMin": 11.22,
-                            "apparentTemperatureMinTime": 1578607320,
-                            "apparentTemperatureMax": 17.77,
-                            "apparentTemperatureMaxTime": 1578560460
-                        },
-                        {
-                            "time": 1578643200,
-                            "summary": "Snow throughout the day.",
-                            "icon": "snow",
-                            "sunriseTime": 1578671160,
-                            "sunsetTime": 1578703500,
-                            "moonPhase": 0.51,
-                            "precipIntensity": 0.0436,
-                            "precipIntensityMax": 0.1328,
-                            "precipIntensityMaxTime": 1578700620,
-                            "precipProbability": 0.86,
-                            "precipType": "snow",
-                            "precipAccumulation": 10.5,
-                            "temperatureHigh": 34.12,
-                            "temperatureHighTime": 1578691680,
-                            "temperatureLow": 25.29,
-                            "temperatureLowTime": 1578758400,
-                            "apparentTemperatureHigh": 24.15,
-                            "apparentTemperatureHighTime": 1578690720,
-                            "apparentTemperatureLow": 12.87,
-                            "apparentTemperatureLowTime": 1578758400,
-                            "dewPoint": 22.8,
-                            "humidity": 0.8,
-                            "pressure": 1016.1,
-                            "windSpeed": 11.43,
-                            "windGust": 43.7,
-                            "windGustTime": 1578699780,
-                            "windBearing": 235,
-                            "cloudCover": 0.93,
-                            "uvIndex": 1,
-                            "uvIndexTime": 1578687060,
-                            "visibility": 3.388,
-                            "ozone": 364.5,
-                            "temperatureMin": 23.49,
-                            "temperatureMinTime": 1578643200,
-                            "temperatureMax": 34.12,
-                            "temperatureMaxTime": 1578691680,
-                            "apparentTemperatureMin": 16.66,
-                            "apparentTemperatureMinTime": 1578643200,
-                            "apparentTemperatureMax": 24.15,
-                            "apparentTemperatureMaxTime": 1578690720
-                        },
-                        {
-                            "time": 1578729600,
-                            "summary": "Snow throughout the day.",
-                            "icon": "snow",
-                            "sunriseTime": 1578757500,
-                            "sunsetTime": 1578789960,
-                            "moonPhase": 0.55,
-                            "precipIntensity": 0.0607,
-                            "precipIntensityMax": 0.1015,
-                            "precipIntensityMaxTime": 1578743880,
-                            "precipProbability": 0.85,
-                            "precipType": "snow",
-                            "precipAccumulation": 17.73,
-                            "temperatureHigh": 27.24,
-                            "temperatureHighTime": 1578754800,
-                            "temperatureLow": 23.03,
-                            "temperatureLowTime": 1578804000,
-                            "apparentTemperatureHigh": 14.32,
-                            "apparentTemperatureHighTime": 1578754800,
-                            "apparentTemperatureLow": 9.26,
-                            "apparentTemperatureLowTime": 1578803760,
-                            "dewPoint": 21.08,
-                            "humidity": 0.83,
-                            "pressure": 1012.4,
-                            "windSpeed": 16.81,
-                            "windGust": 40,
-                            "windGustTime": 1578794100,
-                            "windBearing": 265,
-                            "cloudCover": 0.91,
-                            "uvIndex": 1,
-                            "uvIndexTime": 1578773460,
-                            "visibility": 0.971,
-                            "ozone": 399.2,
-                            "temperatureMin": 22.62,
-                            "temperatureMinTime": 1578790680,
-                            "temperatureMax": 29.56,
-                            "temperatureMaxTime": 1578729600,
-                            "apparentTemperatureMin": 8.69,
-                            "apparentTemperatureMinTime": 1578784020,
-                            "apparentTemperatureMax": 17.97,
-                            "apparentTemperatureMaxTime": 1578732000
-                        },
-                        {
-                            "time": 1578816000,
-                            "summary": "Snow until evening.",
-                            "icon": "snow",
-                            "sunriseTime": 1578843900,
-                            "sunsetTime": 1578876420,
-                            "moonPhase": 0.59,
-                            "precipIntensity": 0.0557,
-                            "precipIntensityMax": 0.1183,
-                            "precipIntensityMaxTime": 1578873420,
-                            "precipProbability": 0.78,
-                            "precipType": "snow",
-                            "precipAccumulation": 16.63,
-                            "temperatureHigh": 29.33,
-                            "temperatureHighTime": 1578855900,
-                            "temperatureLow": 15.06,
-                            "temperatureLowTime": 1578921600,
-                            "apparentTemperatureHigh": 18.1,
-                            "apparentTemperatureHighTime": 1578841200,
-                            "apparentTemperatureLow": 0.28,
-                            "apparentTemperatureLowTime": 1578921300,
-                            "dewPoint": 19.58,
-                            "humidity": 0.79,
-                            "pressure": 1008.7,
-                            "windSpeed": 13.4,
-                            "windGust": 43.83,
-                            "windGustTime": 1578862740,
-                            "windBearing": 262,
-                            "cloudCover": 0.97,
-                            "uvIndex": 1,
-                            "uvIndexTime": 1578860160,
-                            "visibility": 0.188,
-                            "ozone": 405.2,
-                            "temperatureMin": 18.26,
-                            "temperatureMinTime": 1578895620,
-                            "temperatureMax": 29.33,
-                            "temperatureMaxTime": 1578855900,
-                            "apparentTemperatureMin": 4.06,
-                            "apparentTemperatureMinTime": 1578902400,
-                            "apparentTemperatureMax": 18.1,
-                            "apparentTemperatureMaxTime": 1578841200
-                        },
-                        {
-                            "time": 1578902400,
-                            "summary": "Possible light snow throughout the day.",
-                            "icon": "snow",
-                            "sunriseTime": 1578930300,
-                            "sunsetTime": 1578962880,
-                            "moonPhase": 0.63,
-                            "precipIntensity": 0.0354,
-                            "precipIntensityMax": 0.0546,
-                            "precipIntensityMaxTime": 1578963660,
-                            "precipProbability": 0.69,
-                            "precipType": "snow",
-                            "precipAccumulation": 18.11,
-                            "temperatureHigh": 17.65,
-                            "temperatureHighTime": 1578928080,
-                            "temperatureLow": 3.12,
-                            "temperatureLowTime": 1578985380,
-                            "apparentTemperatureHigh": 6.36,
-                            "apparentTemperatureHighTime": 1578970200,
-                            "apparentTemperatureLow": -7.3,
-                            "apparentTemperatureLowTime": 1578985500,
-                            "dewPoint": 10.37,
-                            "humidity": 0.93,
-                            "pressure": 1010,
-                            "windSpeed": 11.2,
-                            "windGust": 42.45,
-                            "windGustTime": 1578915060,
-                            "windBearing": 267,
-                            "cloudCover": 0.85,
-                            "uvIndex": 1,
-                            "uvIndexTime": 1578946500,
-                            "visibility": 0.399,
-                            "ozone": 413.2,
-                            "temperatureMin": 3.12,
-                            "temperatureMinTime": 1578985380,
-                            "temperatureMax": 19.33,
-                            "temperatureMaxTime": 1578902400,
-                            "apparentTemperatureMin": -11.38,
-                            "apparentTemperatureMinTime": 1578952440,
-                            "apparentTemperatureMax": 6.36,
-                            "apparentTemperatureMaxTime": 1578970200
-                        },
-                        {
-                            "time": 1578988800,
-                            "summary": "Possible light snow in the afternoon.",
-                            "icon": "snow",
-                            "sunriseTime": 1579016640,
-                            "sunsetTime": 1579049340,
-                            "moonPhase": 0.66,
-                            "precipIntensity": 0.0198,
-                            "precipIntensityMax": 0.0272,
-                            "precipIntensityMaxTime": 1579013880,
-                            "precipProbability": 0.63,
-                            "precipType": "snow",
-                            "precipAccumulation": 11.44,
-                            "temperatureHigh": 12.06,
-                            "temperatureHighTime": 1579014000,
-                            "temperatureLow": -1.69,
-                            "temperatureLowTime": 1579104000,
-                            "apparentTemperatureHigh": -1.26,
-                            "apparentTemperatureHighTime": 1579055760,
-                            "apparentTemperatureLow": -10.5,
-                            "apparentTemperatureLowTime": 1579104000,
-                            "dewPoint": 2.93,
-                            "humidity": 0.79,
-                            "pressure": 1018,
-                            "windSpeed": 7.62,
-                            "windGust": 23.23,
-                            "windGustTime": 1579017180,
-                            "windBearing": 270,
-                            "cloudCover": 0.94,
-                            "uvIndex": 1,
-                            "uvIndexTime": 1579032960,
-                            "visibility": 0.465,
-                            "ozone": 408.4,
-                            "temperatureMin": 2.87,
-                            "temperatureMinTime": 1579073340,
-                            "temperatureMax": 12.46,
-                            "temperatureMaxTime": 1579004040,
-                            "apparentTemperatureMin": -7.2,
-                            "apparentTemperatureMinTime": 1579038840,
-                            "apparentTemperatureMax": -0.36,
-                            "apparentTemperatureMaxTime": 1579001940
-                        },
-                        {
-                            "time": 1579075200,
-                            "summary": "Foggy throughout the day.",
-                            "icon": "fog",
-                            "sunriseTime": 1579103040,
-                            "sunsetTime": 1579135860,
-                            "moonPhase": 0.7,
-                            "precipIntensity": 0.0067,
-                            "precipIntensityMax": 0.0237,
-                            "precipIntensityMaxTime": 1579143600,
-                            "precipProbability": 0.24,
-                            "precipType": "snow",
-                            "precipAccumulation": 5.03,
-                            "temperatureHigh": 3.48,
-                            "temperatureHighTime": 1579132620,
-                            "temperatureLow": -3.07,
-                            "temperatureLowTime": 1579149300,
-                            "apparentTemperatureHigh": -7.83,
-                            "apparentTemperatureHighTime": 1579100400,
-                            "apparentTemperatureLow": -17.46,
-                            "apparentTemperatureLowTime": 1579159620,
-                            "dewPoint": -8.02,
-                            "humidity": 0.68,
-                            "pressure": 1026.9,
-                            "windSpeed": 6.16,
-                            "windGust": 14.83,
-                            "windGustTime": 1579161600,
-                            "windBearing": 98,
-                            "cloudCover": 1,
-                            "uvIndex": 1,
-                            "uvIndexTime": 1579119180,
-                            "visibility": 0.426,
-                            "ozone": 385.1,
-                            "temperatureMin": -4.6,
-                            "temperatureMinTime": 1579115460,
-                            "temperatureMax": 5.95,
-                            "temperatureMaxTime": 1579078800,
-                            "apparentTemperatureMin": -17.46,
-                            "apparentTemperatureMinTime": 1579159620,
-                            "apparentTemperatureMax": -2.54,
-                            "apparentTemperatureMaxTime": 1579078860
-                        }
-                    ]
-                },
-                "alerts": [
+        });
+    </script>
+    <script>
+        const sampleForecast = {
+            "latitude": 45.32931054214441,
+            "longitude": -121.66508674621582,
+            "timezone": "America/Los_Angeles",
+            "currently": {
+                "time": 1578513856,
+                "summary": "Possible Flurries",
+                "icon": "snow",
+                "nearestStormDistance": 0,
+                "precipIntensity": 0.002,
+                "precipIntensityError": 0,
+                "precipProbability": 0.32,
+                "precipType": "snow",
+                "precipAccumulation": 0.0255,
+                "temperature": 25.43,
+                "apparentTemperature": 13.84,
+                "dewPoint": 24.84,
+                "humidity": 0.98,
+                "pressure": 1012.4,
+                "windSpeed": 13.45,
+                "windGust": 31.97,
+                "windBearing": 268,
+                "cloudCover": 0.83,
+                "uvIndex": 1,
+                "visibility": 3.94,
+                "ozone": 387.5
+            },
+            "daily": {
+                "summary": "Snow today through Tuesday.",
+                "icon": "snow",
+                "data": [
                     {
-                        "title": "Winter Weather Advisory",
-                        "regions": [
-                            "Northern Oregon Cascades"
-                        ],
-                        "severity": "advisory",
-                        "time": 1578520800,
-                        "expires": 1578549600,
-                        "description": "...WINTER WEATHER ADVISORY IN EFFECT FROM 2 PM THIS AFTERNOON TO 10 PM PST THIS EVENING... * WHAT...Snow expected. Total snow accumulations of 3 to 8 inches expected, heaviest south of Mount Jefferson. * WHERE...Northern Oregon Cascades. * WHEN...From 2 PM this afternoon to 10 PM PST this evening. * IMPACTS...Winter travel conditions are expected across the Cascade passes through this evening.\n",
-                        "uri": "https://alerts.weather.gov/cap/wwacapget.php?x=OR125F3445AEFC.WinterWeatherAdvisory.125F34532FA0OR.PQRWSWPQR.907bc650c6d11b85cc53b3ad520b501b"
+                        "time": 1578470400,
+                        "summary": "Possible light snow until evening.",
+                        "icon": "snow",
+                        "sunriseTime": 1578498360,
+                        "sunsetTime": 1578530520,
+                        "moonPhase": 0.44,
+                        "precipIntensity": 0.0225,
+                        "precipIntensityMax": 0.0418,
+                        "precipIntensityMaxTime": 1578525720,
+                        "precipProbability": 0.77,
+                        "precipType": "snow",
+                        "precipAccumulation": 6.66,
+                        "temperatureHigh": 26.3,
+                        "temperatureHighTime": 1578499260,
+                        "temperatureLow": 22.66,
+                        "temperatureLowTime": 1578570600,
+                        "apparentTemperatureHigh": 15.65,
+                        "apparentTemperatureHighTime": 1578538800,
+                        "apparentTemperatureLow": 15.65,
+                        "apparentTemperatureLowTime": 1578538800,
+                        "dewPoint": 23.83,
+                        "humidity": 0.93,
+                        "pressure": 1012.6,
+                        "windSpeed": 10.57,
+                        "windGust": 34.07,
+                        "windGustTime": 1578488940,
+                        "windBearing": 267,
+                        "cloudCover": 0.79,
+                        "uvIndex": 1,
+                        "uvIndexTime": 1578514440,
+                        "visibility": 2.847,
+                        "ozone": 389.3,
+                        "temperatureMin": 22.94,
+                        "temperatureMinTime": 1578556680,
+                        "temperatureMax": 30.02,
+                        "temperatureMaxTime": 1578470700,
+                        "apparentTemperatureMin": 13.01,
+                        "apparentTemperatureMinTime": 1578495720,
+                        "apparentTemperatureMax": 19.8,
+                        "apparentTemperatureMaxTime": 1578470640
+                    },
+                    {
+                        "time": 1578556800,
+                        "summary": "Mostly cloudy throughout the day.",
+                        "icon": "partly-cloudy-day",
+                        "sunriseTime": 1578584760,
+                        "sunsetTime": 1578616980,
+                        "moonPhase": 0.48,
+                        "precipIntensity": 0.0051,
+                        "precipIntensityMax": 0.0187,
+                        "precipIntensityMaxTime": 1578592800,
+                        "precipProbability": 0.34,
+                        "precipType": "snow",
+                        "precipAccumulation": 1.59,
+                        "temperatureHigh": 26.42,
+                        "temperatureHighTime": 1578592380,
+                        "temperatureLow": 23.45,
+                        "temperatureLowTime": 1578640560,
+                        "apparentTemperatureHigh": 16.32,
+                        "apparentTemperatureHighTime": 1578584820,
+                        "apparentTemperatureLow": 15.58,
+                        "apparentTemperatureLowTime": 1578625200,
+                        "dewPoint": 18.85,
+                        "humidity": 0.81,
+                        "pressure": 1021.3,
+                        "windSpeed": 8.25,
+                        "windGust": 25.59,
+                        "windGustTime": 1578602640,
+                        "windBearing": 272,
+                        "cloudCover": 0.82,
+                        "uvIndex": 1,
+                        "uvIndexTime": 1578600720,
+                        "visibility": 4.127,
+                        "ozone": 377,
+                        "temperatureMin": 22.6,
+                        "temperatureMinTime": 1578608100,
+                        "temperatureMax": 26.42,
+                        "temperatureMaxTime": 1578592380,
+                        "apparentTemperatureMin": 11.22,
+                        "apparentTemperatureMinTime": 1578607320,
+                        "apparentTemperatureMax": 17.77,
+                        "apparentTemperatureMaxTime": 1578560460
+                    },
+                    {
+                        "time": 1578643200,
+                        "summary": "Snow throughout the day.",
+                        "icon": "snow",
+                        "sunriseTime": 1578671160,
+                        "sunsetTime": 1578703500,
+                        "moonPhase": 0.51,
+                        "precipIntensity": 0.0436,
+                        "precipIntensityMax": 0.1328,
+                        "precipIntensityMaxTime": 1578700620,
+                        "precipProbability": 0.86,
+                        "precipType": "snow",
+                        "precipAccumulation": 10.5,
+                        "temperatureHigh": 34.12,
+                        "temperatureHighTime": 1578691680,
+                        "temperatureLow": 25.29,
+                        "temperatureLowTime": 1578758400,
+                        "apparentTemperatureHigh": 24.15,
+                        "apparentTemperatureHighTime": 1578690720,
+                        "apparentTemperatureLow": 12.87,
+                        "apparentTemperatureLowTime": 1578758400,
+                        "dewPoint": 22.8,
+                        "humidity": 0.8,
+                        "pressure": 1016.1,
+                        "windSpeed": 11.43,
+                        "windGust": 43.7,
+                        "windGustTime": 1578699780,
+                        "windBearing": 235,
+                        "cloudCover": 0.93,
+                        "uvIndex": 1,
+                        "uvIndexTime": 1578687060,
+                        "visibility": 3.388,
+                        "ozone": 364.5,
+                        "temperatureMin": 23.49,
+                        "temperatureMinTime": 1578643200,
+                        "temperatureMax": 34.12,
+                        "temperatureMaxTime": 1578691680,
+                        "apparentTemperatureMin": 16.66,
+                        "apparentTemperatureMinTime": 1578643200,
+                        "apparentTemperatureMax": 24.15,
+                        "apparentTemperatureMaxTime": 1578690720
+                    },
+                    {
+                        "time": 1578729600,
+                        "summary": "Snow throughout the day.",
+                        "icon": "snow",
+                        "sunriseTime": 1578757500,
+                        "sunsetTime": 1578789960,
+                        "moonPhase": 0.55,
+                        "precipIntensity": 0.0607,
+                        "precipIntensityMax": 0.1015,
+                        "precipIntensityMaxTime": 1578743880,
+                        "precipProbability": 0.85,
+                        "precipType": "snow",
+                        "precipAccumulation": 17.73,
+                        "temperatureHigh": 27.24,
+                        "temperatureHighTime": 1578754800,
+                        "temperatureLow": 23.03,
+                        "temperatureLowTime": 1578804000,
+                        "apparentTemperatureHigh": 14.32,
+                        "apparentTemperatureHighTime": 1578754800,
+                        "apparentTemperatureLow": 9.26,
+                        "apparentTemperatureLowTime": 1578803760,
+                        "dewPoint": 21.08,
+                        "humidity": 0.83,
+                        "pressure": 1012.4,
+                        "windSpeed": 16.81,
+                        "windGust": 40,
+                        "windGustTime": 1578794100,
+                        "windBearing": 265,
+                        "cloudCover": 0.91,
+                        "uvIndex": 1,
+                        "uvIndexTime": 1578773460,
+                        "visibility": 0.971,
+                        "ozone": 399.2,
+                        "temperatureMin": 22.62,
+                        "temperatureMinTime": 1578790680,
+                        "temperatureMax": 29.56,
+                        "temperatureMaxTime": 1578729600,
+                        "apparentTemperatureMin": 8.69,
+                        "apparentTemperatureMinTime": 1578784020,
+                        "apparentTemperatureMax": 17.97,
+                        "apparentTemperatureMaxTime": 1578732000
+                    },
+                    {
+                        "time": 1578816000,
+                        "summary": "Snow until evening.",
+                        "icon": "snow",
+                        "sunriseTime": 1578843900,
+                        "sunsetTime": 1578876420,
+                        "moonPhase": 0.59,
+                        "precipIntensity": 0.0557,
+                        "precipIntensityMax": 0.1183,
+                        "precipIntensityMaxTime": 1578873420,
+                        "precipProbability": 0.78,
+                        "precipType": "snow",
+                        "precipAccumulation": 16.63,
+                        "temperatureHigh": 29.33,
+                        "temperatureHighTime": 1578855900,
+                        "temperatureLow": 15.06,
+                        "temperatureLowTime": 1578921600,
+                        "apparentTemperatureHigh": 18.1,
+                        "apparentTemperatureHighTime": 1578841200,
+                        "apparentTemperatureLow": 0.28,
+                        "apparentTemperatureLowTime": 1578921300,
+                        "dewPoint": 19.58,
+                        "humidity": 0.79,
+                        "pressure": 1008.7,
+                        "windSpeed": 13.4,
+                        "windGust": 43.83,
+                        "windGustTime": 1578862740,
+                        "windBearing": 262,
+                        "cloudCover": 0.97,
+                        "uvIndex": 1,
+                        "uvIndexTime": 1578860160,
+                        "visibility": 0.188,
+                        "ozone": 405.2,
+                        "temperatureMin": 18.26,
+                        "temperatureMinTime": 1578895620,
+                        "temperatureMax": 29.33,
+                        "temperatureMaxTime": 1578855900,
+                        "apparentTemperatureMin": 4.06,
+                        "apparentTemperatureMinTime": 1578902400,
+                        "apparentTemperatureMax": 18.1,
+                        "apparentTemperatureMaxTime": 1578841200
+                    },
+                    {
+                        "time": 1578902400,
+                        "summary": "Possible light snow throughout the day.",
+                        "icon": "snow",
+                        "sunriseTime": 1578930300,
+                        "sunsetTime": 1578962880,
+                        "moonPhase": 0.63,
+                        "precipIntensity": 0.0354,
+                        "precipIntensityMax": 0.0546,
+                        "precipIntensityMaxTime": 1578963660,
+                        "precipProbability": 0.69,
+                        "precipType": "snow",
+                        "precipAccumulation": 18.11,
+                        "temperatureHigh": 17.65,
+                        "temperatureHighTime": 1578928080,
+                        "temperatureLow": 3.12,
+                        "temperatureLowTime": 1578985380,
+                        "apparentTemperatureHigh": 6.36,
+                        "apparentTemperatureHighTime": 1578970200,
+                        "apparentTemperatureLow": -7.3,
+                        "apparentTemperatureLowTime": 1578985500,
+                        "dewPoint": 10.37,
+                        "humidity": 0.93,
+                        "pressure": 1010,
+                        "windSpeed": 11.2,
+                        "windGust": 42.45,
+                        "windGustTime": 1578915060,
+                        "windBearing": 267,
+                        "cloudCover": 0.85,
+                        "uvIndex": 1,
+                        "uvIndexTime": 1578946500,
+                        "visibility": 0.399,
+                        "ozone": 413.2,
+                        "temperatureMin": 3.12,
+                        "temperatureMinTime": 1578985380,
+                        "temperatureMax": 19.33,
+                        "temperatureMaxTime": 1578902400,
+                        "apparentTemperatureMin": -11.38,
+                        "apparentTemperatureMinTime": 1578952440,
+                        "apparentTemperatureMax": 6.36,
+                        "apparentTemperatureMaxTime": 1578970200
+                    },
+                    {
+                        "time": 1578988800,
+                        "summary": "Possible light snow in the afternoon.",
+                        "icon": "snow",
+                        "sunriseTime": 1579016640,
+                        "sunsetTime": 1579049340,
+                        "moonPhase": 0.66,
+                        "precipIntensity": 0.0198,
+                        "precipIntensityMax": 0.0272,
+                        "precipIntensityMaxTime": 1579013880,
+                        "precipProbability": 0.63,
+                        "precipType": "snow",
+                        "precipAccumulation": 11.44,
+                        "temperatureHigh": 12.06,
+                        "temperatureHighTime": 1579014000,
+                        "temperatureLow": -1.69,
+                        "temperatureLowTime": 1579104000,
+                        "apparentTemperatureHigh": -1.26,
+                        "apparentTemperatureHighTime": 1579055760,
+                        "apparentTemperatureLow": -10.5,
+                        "apparentTemperatureLowTime": 1579104000,
+                        "dewPoint": 2.93,
+                        "humidity": 0.79,
+                        "pressure": 1018,
+                        "windSpeed": 7.62,
+                        "windGust": 23.23,
+                        "windGustTime": 1579017180,
+                        "windBearing": 270,
+                        "cloudCover": 0.94,
+                        "uvIndex": 1,
+                        "uvIndexTime": 1579032960,
+                        "visibility": 0.465,
+                        "ozone": 408.4,
+                        "temperatureMin": 2.87,
+                        "temperatureMinTime": 1579073340,
+                        "temperatureMax": 12.46,
+                        "temperatureMaxTime": 1579004040,
+                        "apparentTemperatureMin": -7.2,
+                        "apparentTemperatureMinTime": 1579038840,
+                        "apparentTemperatureMax": -0.36,
+                        "apparentTemperatureMaxTime": 1579001940
+                    },
+                    {
+                        "time": 1579075200,
+                        "summary": "Foggy throughout the day.",
+                        "icon": "fog",
+                        "sunriseTime": 1579103040,
+                        "sunsetTime": 1579135860,
+                        "moonPhase": 0.7,
+                        "precipIntensity": 0.0067,
+                        "precipIntensityMax": 0.0237,
+                        "precipIntensityMaxTime": 1579143600,
+                        "precipProbability": 0.24,
+                        "precipType": "snow",
+                        "precipAccumulation": 5.03,
+                        "temperatureHigh": 3.48,
+                        "temperatureHighTime": 1579132620,
+                        "temperatureLow": -3.07,
+                        "temperatureLowTime": 1579149300,
+                        "apparentTemperatureHigh": -7.83,
+                        "apparentTemperatureHighTime": 1579100400,
+                        "apparentTemperatureLow": -17.46,
+                        "apparentTemperatureLowTime": 1579159620,
+                        "dewPoint": -8.02,
+                        "humidity": 0.68,
+                        "pressure": 1026.9,
+                        "windSpeed": 6.16,
+                        "windGust": 14.83,
+                        "windGustTime": 1579161600,
+                        "windBearing": 98,
+                        "cloudCover": 1,
+                        "uvIndex": 1,
+                        "uvIndexTime": 1579119180,
+                        "visibility": 0.426,
+                        "ozone": 385.1,
+                        "temperatureMin": -4.6,
+                        "temperatureMinTime": 1579115460,
+                        "temperatureMax": 5.95,
+                        "temperatureMaxTime": 1579078800,
+                        "apparentTemperatureMin": -17.46,
+                        "apparentTemperatureMinTime": 1579159620,
+                        "apparentTemperatureMax": -2.54,
+                        "apparentTemperatureMaxTime": 1579078860
                     }
-                ],
-                "flags": {
-                    "sources": [
-                        "nwspa",
-                        "cmc",
-                        "gfs",
-                        "hrrr",
-                        "icon",
-                        "isd",
-                        "madis",
-                        "nam",
-                        "sref",
-                        "darksky",
-                        "nearest-precip"
+                ]
+            },
+            "alerts": [
+                {
+                    "title": "Winter Weather Advisory",
+                    "regions": [
+                        "Northern Oregon Cascades"
                     ],
-                    "nearest-station": 0,
-                    "units": "us"
-                },
-                "offset": -8
-            }
-        </script>
-    </body>
+                    "severity": "advisory",
+                    "time": 1578520800,
+                    "expires": 1578549600,
+                    "description": "...WINTER WEATHER ADVISORY IN EFFECT FROM 2 PM THIS AFTERNOON TO 10 PM PST THIS EVENING... * WHAT...Snow expected. Total snow accumulations of 3 to 8 inches expected, heaviest south of Mount Jefferson. * WHERE...Northern Oregon Cascades. * WHEN...From 2 PM this afternoon to 10 PM PST this evening. * IMPACTS...Winter travel conditions are expected across the Cascade passes through this evening.\n",
+                    "uri": "https://alerts.weather.gov/cap/wwacapget.php?x=OR125F3445AEFC.WinterWeatherAdvisory.125F34532FA0OR.PQRWSWPQR.907bc650c6d11b85cc53b3ad520b501b"
+                }
+            ],
+            "flags": {
+                "sources": [
+                    "nwspa",
+                    "cmc",
+                    "gfs",
+                    "hrrr",
+                    "icon",
+                    "isd",
+                    "madis",
+                    "nam",
+                    "sref",
+                    "darksky",
+                    "nearest-precip"
+                ],
+                "nearest-station": 0,
+                "units": "us"
+            },
+            "offset": -8
+        }
+    </script>
+</body>
+
 </html>
